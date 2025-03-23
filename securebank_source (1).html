@@ -1,0 +1,952 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+<head><script>
+        // JavaScript code to support elements selection and sending prompt for them.
+        document.addEventListener("DOMContentLoaded", () => {
+            let lastPickedElement = null;
+            let popupId = null;
+            let selectionModeEnabled = false; // Disable selection mode by default
+
+            // Function to check if origin is from getlazy.ai domain
+            function isAllowedOrigin(origin) {
+                try {
+                    const url = new URL(origin);
+                    return url.hostname === 'getlazy.ai' || url.hostname.endsWith('.getlazy.ai') || url.hostname == 'localhost';
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            // Function to highlight elements on hover
+            document.body.addEventListener("mouseover", (event) => {
+                if (!selectionModeEnabled) return;
+
+                if (lastPickedElement) {
+                    lastPickedElement.style.outline = '';
+                }
+
+
+                // Exclude body, existing popup, overlay, and elements inside popup
+                if (event.target === document.body ||
+                    event.target.closest(".popup") ||
+                    event.target.id === `overlay-${popupId}` ||
+                    event.target.closest(`#overlay-${popupId}`)) return;
+
+                // Ensure we're not selecting the overlay or popup
+                if (event.target.closest(`#popup-${popupId}`)) return;
+
+                lastPickedElement = event.target;
+                lastPickedElement.style.outline = '4px solid #007AFF';
+            });
+
+            document.addEventListener('focusin', (event) => {
+                // Prevent Bootstrap or other scripts from hijacking focus
+                event.stopImmediatePropagation();
+            }, true);
+
+            // Function to open popup when an element is clicked
+            document.body.addEventListener("click", (event) => {
+                if (!selectionModeEnabled) return;
+
+                // Prevent default and stop propagation if a popup is already open
+                if (popupId) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+
+                // Prevent default only if we're creating a popup
+                if (lastPickedElement && !event.target.closest(".popup")) {
+                    event.preventDefault();
+                }
+
+                // Ignore clicks inside the popup
+                if (event.target.closest(".popup")) return;
+
+                if (lastPickedElement) {
+                    // Generate a unique ID for the popup
+                    popupId = "popup-" + Date.now();
+
+                    // Create the popup dynamically
+                    const popup = document.createElement("div");
+                    popup.classList.add("popup");
+                    popup.id = popupId;
+                    popup.style.position = 'fixed';
+                    popup.style.top = '50%';
+                    popup.style.left = '50%';
+                    popup.style.transform = 'translate(-50%, -50%)';
+                    popup.style.zIndex = '2147480100';
+
+                    // Create overlay to prevent clicking on background
+                    const overlay = document.createElement("div");
+                    overlay.id = `overlay-${popupId}`;
+                    overlay.style.position = 'fixed';
+                    overlay.style.top = '0';
+                    overlay.style.left = '0';
+                    overlay.style.width = '100%';
+                    overlay.style.height = '100%';
+                    overlay.style.zIndex = '2147480000';
+                    overlay.style.display = 'block';
+
+                    popup.innerHTML = `
+                        <div class="popup-content" style="background-color: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); padding: 25px; width: 100%; position: relative; z-index: 2147480200;">
+                            <textarea id="prompt-input-${popupId}" placeholder="Describe your changes" style="width: 100%; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 6px; font-size: 18px; height: 200px; resize: horizontal; padding: 4px 8px; color: black; background-color: white; outline: unset;"></textarea>
+                            <div style="display: flex; justify-content: center; gap: 15px; width: 100%;">
+                                <button id="cancel-${popupId}" style="background-color: #DC2626; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; transition: all 0.3s; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">Cancel</button>
+                                <button id="send-${popupId}" disabled style="opacity: 0.5; background: none; border: none;"><svg width="40" height="40" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="20" height="20" rx="10" fill="#007BFF"/><path d="M15.5 10H4.5M15.5 10L11.57143 14.125M15.5 10L11.57143 5.875" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+                            </div>
+                    `;
+
+                    document.body.appendChild(overlay);
+                    document.body.appendChild(popup);
+
+                    const promptInput = document.getElementById(`prompt-input-${popupId}`);
+                    const sendButton = document.getElementById(`send-${popupId}`);
+
+                    // Enable send button only when input has value
+                    promptInput.addEventListener('input', () => {
+                        sendButton.disabled = promptInput.value.trim() === '';
+                        sendButton.style.cursor = promptInput.value.trim() === '' ? 'not-allowed' : 'pointer';
+                        sendButton.style.opacity = promptInput.value.trim() === '' ? '0.5' : '1';
+                    });
+
+                    // Send prompt button - send content to parent window
+                    sendButton.addEventListener("click", () => {
+                        const prompt = `@eng I want to make the following change: ${promptInput.value.trim()}
+
+
+
+
+Additional info:
+
+
+
+
+I am on page: "${window.location.pathname}"
+
+
+
+
+The element I am trying to change: ${lastPickedElement.outerHTML}
+
+
+
+
+My screen size is: ${window.innerWidth} X ${window.innerHeight}`;
+                        window.parent.postMessage({'submitPromptFromPointAndEdit': prompt}, '*');
+                        closePopup();
+                    });
+
+                    // Cancel button - close the popup
+                    document.getElementById(`cancel-${popupId}`).addEventListener("click", closePopup);
+                }
+            });
+
+            // Function to close the popup
+            function closePopup() {
+                if (popupId) {
+                    const popup = document.getElementById(popupId);
+                    const overlay = document.getElementById(`overlay-${popupId}`);
+                    if (popup) popup.remove();
+                    if (overlay) overlay.remove();
+                    popupId = null;
+                    selectionModeEnabled = false;
+                    // Remove the outline from the last picked element
+                    if (lastPickedElement) {
+                        lastPickedElement.style.outline = '';
+                        lastPickedElement = null;
+                    }
+                }
+            }
+
+            // Listen for messages from parent window
+            window.addEventListener('message', (event) => {
+                if (!isAllowedOrigin(event.origin)) {
+                    console.warn('Message received from unauthorized origin:', event.origin);
+                    return;
+                }
+
+                if (event.data && event.data.action === 'ENABLE_SELECTION_MODE') {
+                    selectionModeEnabled = true;
+                    // Reset any previous selection
+                    if (lastPickedElement) {
+                        lastPickedElement.style.outline = '';
+                    }
+                }
+            });
+        })
+</script><script>
+    // JavaScript code to monitor exceptions and pass them back to AI.
+    _lazy_javascript_errors_reporter = async function(message, source, lineno, colno, error) {
+        if (message instanceof PromiseRejectionEvent) {
+            stack_trace = `Stack Trace:\n${message.reason.stack}`;
+        } else {
+            const url = new URL(source);
+            const pathname = url.pathname;
+            const origin = url.origin;
+            const errorMessage = error ? error.stack : '';
+            const errorMessageWithoutOrigin = errorMessage.replace(origin, '');
+
+            // Fetch the source code of the script
+            const response = await fetch(source);
+            const scriptText = await response.text();
+
+            // Get the lines before and after the error line
+            const scriptLines = scriptText.split('\n');
+            const startLine = Math.max(0, lineno - 11);  // 10 lines before (lineno is 1-indexed)
+            const endLine = Math.min(scriptLines.length, lineno + 10); // 10 lines after
+            const errorContext = scriptLines
+                .slice(startLine, endLine + 1)
+                .map((line, index) => {
+                    const currentLineNumber = startLine + index + 1;
+                    return currentLineNumber === lineno
+                        ? `${line} // <-- ${message} occurred here`
+                        : line;
+                })
+                .join('\n');
+            stack_trace = `Stack Trace:\n${errorMessageWithoutOrigin}\n\n${errorContext}`;
+        }
+
+        const formatted_message = [
+            `Javascript Error Type: ${message}`,
+            `URL on which error occurred: ${window.location.href}`,
+            `\`\`\``,
+            stack_trace,
+            `\`\`\`\n`,
+            `User Agent: ${navigator.userAgent}`,
+            `Platform: ${navigator.platform}`,
+            `Language: ${navigator.language}`,
+        ].join('\n\n')
+
+        fetch('/report_to_tty/testing--cfb15bf7-cb40-430e-be3e-081768d3a58b/console_log_error_reporting/gAAAAABn4DZ_gqZURDvBcFB3qow2sH6IF_XzOJ8cW5n70GG5U7_F_pyUE2e2gefiodjO3n-Lk2li3uLzt5koAG-TdcHHyRT0eeMF8ScZYIrh0TBD2Wx9gTxDrcioyTAJE7Lc_O3We0s-mMSeduGj9TKf99kLg8q5xy65LjfY4YOxLYnrr-Y7jxp8waryTxVQBqLTXdZixCD90cIznhYeyJ7WSFWolUK3ww==', {
+            mode: 'no-cors',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: formatted_message,
+            }),
+        });
+        console.error("Lazy Caught and reported an error back to AI:", message);
+        return false; // Propagate the error
+    };
+    window.onerror = _lazy_javascript_errors_reporter
+    window.onunhandledrejection = _lazy_javascript_errors_reporter
+</script>
+<meta charset="utf-8"/>
+<title>SecureBank Source Code</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet"/>
+<style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .file-section { margin-bottom: 30px; }
+        .file-name { font-weight: bold; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+<h1>SecureBank Source Code</h1>
+<div class="file-section"><h2>Python Files</h2>
+<div class="file-section">
+<div class="file-name">main.py</div>
+<pre><code class="language-python">from flask import Flask, render_template, redirect, url_for, request, flash, session
+from flask_sqlalchemy import SQLAlchemy
+from gunicorn.app.base import BaseApplication
+from abilities import apply_sqlite_migrations
+import os
+import re
+import werkzeug.security as security
+
+app = Flask(__name__, static_folder='static')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///banking.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'fallback_secret_key_for_development')
+db = SQLAlchemy(app)
+
+class User(db.Model):
+    __tablename__ = 'users'  # Match the table name in migrations
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    name = db.Column(db.String(120), nullable=False)  # Match NOT NULL in migration
+    password = db.Column(db.String(255), nullable=False)
+    phone_number = db.Column(db.String(20), nullable=False)
+    country_code = db.Column(db.String(5), nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    account = db.relationship('BankAccount', uselist=False, back_populates='user')
+
+class BankAccount(db.Model):
+    __tablename__ = 'bank_accounts'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    account_number = db.Column(db.String(20), unique=True, nullable=False)
+    balance = db.Column(db.Float, default=0.0, nullable=False)
+    user = db.relationship('User', back_populates='account')
+    transactions = db.relationship('Transaction', back_populates='account', order_by='Transaction.created_at.desc()')
+
+class Transaction(db.Model):
+    __tablename__ = 'transactions'
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('bank_accounts.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    transaction_type = db.Column(db.String(20), nullable=False)  # deposit, withdrawal, transfer
+    description = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    account = db.relationship('BankAccount', back_populates='transactions')
+
+with app.app_context():
+    apply_sqlite_migrations(db.engine, db.Model, "migrations")
+
+@app.route("/")
+def home_route():
+    return render_template("home.html")
+
+@app.route("/login", methods=['GET', 'POST'])
+def login_route():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        user = User.query.filter_by(email=email).first()
+        if user and security.check_password_hash(user.password, password):
+            session['user_id'] = user.id
+            return redirect(url_for('dashboard_route'))
+        else:
+            flash('Invalid email or password', 'error')
+            return render_template("login.html")
+    return render_template("login.html")
+
+@app.route("/register", methods=['GET', 'POST'])
+def register_route():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        phone_number = request.form['phone_number']
+        country_code = request.form['country_code']
+
+        # Basic validation
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            flash('Invalid email format', 'error')
+            return render_template("register.html")
+
+        if len(password) &lt; 8:
+            flash('Password must be at least 8 characters long', 'error')
+            return render_template("register.html")
+
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            flash('Email already registered', 'error')
+            return render_template("register.html")
+
+        hashed_password = security.generate_password_hash(password)
+        new_user = User(
+            email=email,
+            name=email.split('@')[0],  # Use part before @ as default name
+            password=hashed_password,
+            phone_number=phone_number,
+            country_code=country_code
+        )
+        db.session.add(new_user)
+        db.session.commit()
+
+        flash('Registration successful', 'success')
+        return redirect(url_for('login_route'))
+
+    return render_template("register.html")
+
+@app.route("/dashboard")
+def dashboard_route():
+    if 'user_id' not in session:
+        flash('Please login first', 'error')
+        return redirect(url_for('login_route'))
+        
+    user = User.query.get(session['user_id'])
+    if not user:
+        session.clear()
+        flash('User not found', 'error')
+        return redirect(url_for('login_route'))
+        
+    if not user.account:
+        # Create a default bank account if not exists
+        account = BankAccount(
+            user_id=user.id,
+            account_number=f"1234{user.id:04d}5678",
+            balance=1000.0  # Default starting balance
+        )
+        db.session.add(account)
+        db.session.commit()
+
+        # Create some sample transactions
+        sample_transactions = [
+            Transaction(account_id=account.id, amount=500.0, transaction_type='deposit', description='Initial deposit'),
+            Transaction(account_id=account.id, amount=-50.0, transaction_type='withdrawal', description='ATM Withdrawal'),
+            Transaction(account_id=account.id, amount=200.0, transaction_type='deposit', description='Salary'),
+        ]
+        db.session.add_all(sample_transactions)
+        db.session.commit()
+        
+        # Refresh user object to get the new account
+        user = User.query.get(session['user_id'])
+
+    return render_template("dashboard.html",
+        user=user,
+        account=user.account,
+        transactions=user.account.transactions[:5]  # Last 5 transactions
+    )
+
+@app.route("/logout")
+def logout_route():
+    # Clear any session data
+    session.clear()
+    flash('You have been logged out', 'success')
+    return redirect(url_for('home_route'))
+
+class StandaloneApplication(BaseApplication):
+    def __init__(self, app, options=None):
+        self.application = app
+        self.options = options or {}
+        super().__init__()
+
+    def load_config(self):
+        for key, value in self.options.items():
+            if key in self.cfg.settings and value is not None:
+                self.cfg.set(key.lower(), value)
+
+    def load(self):
+        return self.application
+
+@app.route("/download")
+def download_source():
+    import os
+    import base64
+    from flask import make_response
+
+    def read_file(path, encoding='utf-8'):
+        try:
+            with open(path, 'r', encoding=encoding) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            with open(path, 'rb') as f:
+                return base64.b64encode(f.read()).decode('utf-8')
+
+    def get_file_contents():
+        files = {
+            'Python Files': {
+                'main.py': read_file('main.py'),
+                'requirements.txt': read_file('requirements.txt')
+            },
+            'HTML Templates': {
+                template: read_file(os.path.join('templates', template)) 
+                for template in os.listdir('templates') 
+                if os.path.isfile(os.path.join('templates', template))
+            },
+            'Migrations': {
+                migration: read_file(os.path.join('migrations', migration)) 
+                for migration in os.listdir('migrations')
+            },
+            'Static Files': {
+                os.path.relpath(os.path.join(root, file), 'static'): read_file(os.path.join(root, file), 'utf-8') 
+                for root, dirs, files in os.walk('static') 
+                for file in files
+            }
+        }
+        return files
+
+    html_template = '''
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>SecureBank Source Code</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet"/>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .file-section { margin-bottom: 30px; }
+        .file-name { font-weight: bold; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>SecureBank Source Code</h1>
+'''
+    # Add each category and its files
+    for category, files in get_file_contents().items():
+        html_template += f'<div class="file-section"><h2>{category}</h2>'
+        for filename, content in files.items():
+            language = 'python' if filename.endswith('.py') else \
+                      'sql' if filename.endswith('.sql') else \
+                      'html' if filename.endswith('.html') else \
+                      'css' if filename.endswith('.css') else 'plain'
+            html_template += f'''
+            <div class="file-section">
+                <div class="file-name">{filename}</div>
+                <pre><code class="language-{language}">{content}</code></pre>
+            </div>
+            '''
+        html_template += '</div>'
+    
+    html_template += '''
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
+    <script>
+        // Automatically trigger download
+        document.addEventListener('DOMContentLoaded', function() {
+            const blob = new Blob([document.documentElement.outerHTML], {type: 'text/html'});
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'securebank_source.html';
+            link.click();
+        });
+    </script>
+</body>
+</html>
+    '''
+
+    response = make_response(html_template)
+    response.headers['Content-Disposition'] = 'attachment; filename=securebank_source.html'
+    return response
+
+if __name__ == "__main__":
+    options = {
+        "bind": "0.0.0.0:8080",
+        "workers": 4,
+        "loglevel": "info",
+        "accesslog": "-",
+        "preload_app": True
+    }
+    StandaloneApplication(app, options).run()</code></pre>
+</div>
+<div class="file-section">
+<div class="file-name">requirements.txt</div>
+<pre><code class="language-plain">Flask
+Flask-SQLAlchemy
+SQLAlchemy
+Werkzeug
+flask-static-compress
+flask==3.0.1
+gunicorn
+werkzeug==3.0.1</code></pre>
+</div>
+</div><div class="file-section"><h2>HTML Templates</h2>
+<div class="file-section">
+<div class="file-name">unicode_escape.cpython-311.pyc.140674493344944</div>
+<pre><code class="language-plain">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</code></pre>
+</div>
+<div class="file-section">
+<div class="file-name">unicode_escape.cpython-311.pyc.140316385657136</div>
+<pre><code class="language-plain">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</code></pre>
+</div>
+<div class="file-section">
+<div class="file-name">home.html</div>
+<pre><code class="language-html"><!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <base href="/"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="/static/css/styles.css" rel="stylesheet">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>SecureBank - Modern Banking Solution</title>
+  </link></head>
+  <body class="bg-gray-100">
+    <nav class="bg-gray-800 fixed w-full z-10 top-0">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <div class="flex items-center">
+            <div class="flex-shrink-0">
+              <a class="text-white font-bold text-xl" href="/">SecureBank</a>
+            </div>
+          </div>
+          <div class="flex items-center">
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/login">Login</a>
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/register">Register</a>
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/dashboard">Dashboard</a>
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/logout">Logout</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <div class="container mx-auto px-4 min-h-screen pt-24">
+      <div class="text-center py-16">
+        <h1 class="text-4xl font-bold text-gray-900 mb-4">Welcome to SecureBank</h1>
+        <p class="text-xl text-gray-600 mb-8">Your trusted partner for secure online banking</p>
+          <a class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors mr-4" href="/login">
+            Login
+          </a>
+          <a class="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors" href="/register">
+            Register
+          </a>
+      </div>
+      
+      <div class="grid md:grid-cols-3 gap-8 py-12">
+        <div class="bg-white p-6 rounded-lg shadow">
+          <h3 class="text-xl font-semibold mb-4">Secure Banking</h3>
+          <p class="text-gray-600">Bank with confidence knowing your data is protected by industry-leading security measures.</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow">
+          <h3 class="text-xl font-semibold mb-4">Easy Transfers</h3>
+          <p class="text-gray-600">Send and receive money instantly with our intuitive transfer system.</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow">
+          <h3 class="text-xl font-semibold mb-4">24/7 Support</h3>
+          <p class="text-gray-600">Our dedicated support team is always here to help you with any questions.</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html></code></pre>
+</div>
+<div class="file-section">
+<div class="file-name">dashboard.html</div>
+<pre><code class="language-html"><!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <base href="/"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Inline CSS from styles.css */
+      :root {
+        --background-color: #1a202c;
+        --text-color: #e2e8f0;
+      }
+
+      body {
+        background-color: var(--background-color);
+        color: var(--text-color);
+        font-family: 'Inter', sans-serif;
+        scroll-behavior: smooth;
+      }
+
+      .mobile-logout-link {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 0.5rem !important;
+      }
+    </style>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Dashboard - SecureBank</title>
+    <script>
+      // Inline header template
+      function renderHeader() {
+        return `
+          <nav class="bg-gray-800 fixed w-full z-10 top-0">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                  <div class="flex-shrink-0">
+                    <a href="/" class="text-white font-bold text-xl">SecureBank</a>
+                  </div>
+                </div>
+                <div class="flex items-center">
+                  <a href="/login" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Login</a>
+                  <a href="/register" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Register</a>
+                  <a href="/dashboard" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
+                  <a href="/logout" class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Logout</a>
+                </div>
+              </div>
+            </div>
+          </nav>
+        `;
+      }
+    </script>
+  </head>
+  <body class="bg-gray-100">
+    <div id="header"></div>
+    <div class="text-center mb-4">
+      <a class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" href="/download">
+        Download Source Code
+      </a>
+    </div>
+    <div class="container mx-auto px-4 min-h-screen pt-24">
+      <div class="grid md:grid-cols-3 gap-6">
+        <!-- Bank Card -->
+        <div class="bg-white text-white rounded-2xl shadow-2xl p-6 relative overflow-hidden transform transition-all duration-300 hover:scale-[1.02]" style="background: url('https://i.pinimg.com/736x/32/05/09/320509dc34122eb19504324201abf0a8.jpg') no-repeat center center; background-size: cover;">
+          <div class="relative z-10">
+            <div class="flex justify-between items-center mb-4">
+              <div class="text-3xl font-bold tracking-wider uppercase text-white drop-shadow-lg">SecureBank</div>
+              <img alt="Card Icon" class="w-10 h-10 opacity-70" src="https://cdn3.emoji.gg/emojis/39789-securo.png"/>
+            </div>
+            <div class="text-3xl font-bold mb-6 tracking-widest text-white drop-shadow-lg">
+              **** **** **** {{ account.account_number[-4:] }}
+            </div>
+            <div class="flex justify-between items-end">
+              <div>
+                <div class="text-sm opacity-75 uppercase tracking-wider text-white drop-shadow-lg">Account Holder</div>
+                <div class="font-semibold text-xl text-white drop-shadow-lg">{{ user.name }}</div>
+              </div>
+              <div class="text-right">
+                <div class="text-sm opacity-75 uppercase tracking-wider text-white drop-shadow-lg">Balance</div>
+                <div class="text-3xl font-bold text-white drop-shadow-lg">${{ "{:,.2f}".format(account.balance) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Account Summary -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-xl font-bold mb-4">Account Summary</h2>
+          <div class="space-y-3">
+            <div class="flex justify-between">
+              <span class="text-gray-600">Account Number</span>
+              <span class="font-semibold">{{ account.account_number }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">Total Balance</span>
+              <span class="font-semibold">${{ "{:,.2f}".format(account.balance) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <h2 class="text-xl font-bold mb-4">Recent Transactions</h2>
+          <div class="space-y-3">
+            {% for transaction in transactions %}
+            <div class="flex justify-between border-b pb-2 last:border-b-0">
+              <div>
+                <div class="font-semibold">{{ transaction.description }}</div>
+                <div class="text-sm text-gray-500">{{ transaction.created_at.strftime('%b %d, %Y') }}</div>
+              </div>
+              <div class="text-{{ 'green' if transaction.amount &gt; 0 else 'red' }}-600 font-semibold">
+                {% if transaction.amount &gt; 0 %}${% else %}-${% endif %}{{ "{:,.2f}".format(transaction.amount|abs) }}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Render header on page load
+      document.getElementById('header').innerHTML = renderHeader();
+    </script>
+  </div></body>
+</html></code></pre>
+</div>
+<div class="file-section">
+<div class="file-name">login.html</div>
+<pre><code class="language-html"><!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <base href="/"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="/static/css/styles.css" rel="stylesheet">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Login - SecureBank</title>
+  </link></head>
+  <body class="bg-gray-100">
+    <nav class="bg-gray-800 fixed w-full z-10 top-0">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <div class="flex items-center">
+            <div class="flex-shrink-0">
+              <a class="text-white font-bold text-xl" href="/">SecureBank</a>
+            </div>
+          </div>
+          <div class="flex items-center">
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/login">Login</a>
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/register">Register</a>
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/dashboard">Dashboard</a>
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/logout">Logout</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <div class="container mx-auto px-4 min-h-screen pt-24 flex items-center justify-center">
+      <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        <h2 class="text-2xl font-bold mb-6 text-center">Login to SecureBank</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="bg-{{ 'red' if category == 'error' else 'green' }}-100 border border-{{ 'red' if category == 'error' else 'green' }}-400 text-{{ 'red' if category == 'error' else 'green' }}-700 px-4 py-3 rounded relative mb-4" role="alert">
+                {{ message }}
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+        <form action="{{ url_for('login_route') }}" method="POST">
+          <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2" for="email">Email</label>
+            <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" name="email" required="" type="email"/>
+          </div>
+          <div class="mb-6">
+            <label class="block text-gray-700 text-sm font-bold mb-2" for="password">Password</label>
+            <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline" name="password" required="" type="password"/>
+          </div>
+          <div class="flex items-center justify-between">
+            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="submit">
+              Sign In
+            </button>
+            <a class="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800" href="{{ url_for('register_route') }}">
+              Register
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html></code></pre>
+</div>
+<div class="file-section">
+<div class="file-name">register.html</div>
+<pre><code class="language-html"><!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <base href="/"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="/static/css/styles.css" rel="stylesheet">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Register - SecureBank</title>
+  </link></head>
+  <body class="bg-gray-100">
+    <nav class="bg-gray-800 fixed w-full z-10 top-0">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <div class="flex items-center">
+            <div class="flex-shrink-0">
+              <a class="text-white font-bold text-xl" href="/">SecureBank</a>
+            </div>
+          </div>
+          <div class="flex items-center">
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/login">Login</a>
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/register">Register</a>
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/dashboard">Dashboard</a>
+            <a class="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium" href="/logout">Logout</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <div class="container mx-auto px-4 min-h-screen pt-24 flex items-center justify-center">
+      <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        <h2 class="text-2xl font-bold mb-6 text-center">Register for SecureBank</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="bg-{{ 'red' if category == 'error' else 'green' }}-100 border border-{{ 'red' if category == 'error' else 'green' }}-400 text-{{ 'red' if category == 'error' else 'green' }}-700 px-4 py-3 rounded relative mb-4" role="alert">
+                {{ message }}
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+        <form action="{{ url_for('register_route') }}" method="POST">
+          <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2" for="email">Email</label>
+            <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" name="email" required="" type="email"/>
+          </div>
+          <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2" for="password">Password</label>
+            <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline" name="password" required="" type="password"/>
+          </div>
+          <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2" for="country_code">Country Code</label>
+            <select class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" name="country_code" required="">
+              <option value="+1">United States (+1)</option>
+              <option value="+44">United Kingdom (+44)</option>
+              <option value="+91">India (+91)</option>
+              <option value="+86">China (+86)</option>
+              <option value="+81">Japan (+81)</option>
+            </select>
+          </div>
+          <div class="mb-6">
+            <label class="block text-gray-700 text-sm font-bold mb-2" for="phone_number">Phone Number</label>
+            <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" name="phone_number" required="" type="tel"/>
+          </div>
+          <div class="flex items-center justify-between">
+            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="submit">
+              Register
+            </button>
+            <a class="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800" href="{{ url_for('login_route') }}">
+              Already have an account?
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html></code></pre>
+</div>
+</div><div class="file-section"><h2>Migrations</h2>
+<div class="file-section">
+<div class="file-name">001_create_users_table.sql</div>
+<pre><code class="language-sql">CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);</code></pre>
+</div>
+<div class="file-section">
+<div class="file-name">002_add_user_details.sql</div>
+<pre><code class="language-sql">ALTER TABLE users ADD COLUMN password TEXT NOT NULL;
+ALTER TABLE users ADD COLUMN phone_number TEXT NOT NULL;
+ALTER TABLE users ADD COLUMN country_code TEXT NOT NULL;</code></pre>
+</div>
+<div class="file-section">
+<div class="file-name">003_add_bank_accounts_and_transactions.sql</div>
+<pre><code class="language-sql">CREATE TABLE bank_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    account_number TEXT NOT NULL UNIQUE,
+    balance REAL NOT NULL DEFAULT 0.0,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE TABLE transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    transaction_type TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(account_id) REFERENCES bank_accounts(id)
+);</code></pre>
+</div>
+</div><div class="file-section"><h2>Static Files</h2>
+<div class="file-section">
+<div class="file-name">css/styles.css</div>
+<pre><code class="language-css">/* Base styles */
+:root {
+  --background-color: #1a202c;
+  --text-color: #e2e8f0;
+}
+
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  font-family: 'Inter', sans-serif;
+  scroll-behavior: smooth;
+}
+
+.mobile-logout-link {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+}</code></pre>
+</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
+<script>
+        // Automatically trigger download
+        document.addEventListener('DOMContentLoaded', function() {
+            const blob = new Blob([document.documentElement.outerHTML], {type: 'text/html'});
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'securebank_source.html';
+            link.click();
+        });
+    </script>
+</body>
+</html>
